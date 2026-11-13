@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "MLSC 100 Days",
+  "name": "MLSC HDOLC",
   "version": "0.1.0",
-  "description": "Your MLSC LeetCode challenge companion.",
+  "description": "Your LeetCode companion for tracking submissions, coding activity and 100-day challenge progress.",
   "permissions": [
     "storage",
     "activeTab",
@@ -15,7 +15,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open MLSC Dashboard",
+    "default_title": "Open MLSC HDOLC",
     "default_popup": "popup.html"
   },
   "content_scripts": [

@@ -1,4 +1,4 @@
-# MLSC 100 Days - LeetCode Companion
+# MLSC HDOLC
 
 A local-first Chrome extension for tracking LeetCode submissions and 100-day challenge progress.
 
