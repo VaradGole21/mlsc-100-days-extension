@@ -11,10 +11,8 @@ import {
 } from "./database/submissions";
 import { db, type SubmissionRecord } from "./database/db";
 import "./style.css";
-
 type Tab = "control" | "records" | "days";
 type Theme = "violet" | "green" | "blue" | "amber" | "mono";
-
 const themes: Record<Theme, { accent: string; soft: string; on: string }> = {
   violet: { accent: "#b794ff", soft: "rgba(183,148,255,.13)", on: "#171020" },
   green: { accent: "#a3e635", soft: "rgba(163,230,53,.13)", on: "#141b0c" },
@@ -22,7 +20,6 @@ const themes: Record<Theme, { accent: string; soft: string; on: string }> = {
   amber: { accent: "#fbbf65", soft: "rgba(251,191,101,.13)", on: "#21170b" },
   mono: { accent: "#d1d5db", soft: "rgba(209,213,219,.12)", on: "#17191d" }
 };
-
 const emptyStats = {
   totalSubmissions: 0,
   acceptedSubmissions: 0,
@@ -30,7 +27,6 @@ const emptyStats = {
   uniqueProblems: 0,
   acceptanceRate: 0
 };
-
 function App() {
   const [tab, setTab] = useState<Tab>("control");
   const [username, setUsername] = useState("");
@@ -39,6 +35,7 @@ function App() {
   const [stats, setStats] = useState(emptyStats);
   const [recent, setRecent] = useState<SubmissionRecord[]>([]);
   const [recordSearch, setRecordSearch] = useState("");
+  const [problemLookup, setProblemLookup] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [languageFilter, setLanguageFilter] = useState("All");
   const [completedDays, setCompletedDays] = useState(0);
@@ -48,7 +45,6 @@ function App() {
   const [autoSync, setAutoSync] = useState(true);
   const [theme, setTheme] = useState<Theme>("violet");
   const [loaded, setLoaded] = useState(false);
-
   async function loadData() {
     try {
       const stored = await chrome.storage.local.get([
@@ -59,7 +55,6 @@ function App() {
       setAutoSync(stored.autoSyncEnabled !== false);
       const selectedTheme = (stored.mlscTheme || "violet") as Theme;
       setTheme(themes[selectedTheme] ? selectedTheme : "violet");
-
       const [days, progress] = await Promise.all([
         db.challengeDays.toArray(),
         db.progress.toArray()
@@ -77,7 +72,6 @@ function App() {
       }
       setDayProgress(progressMap);
       setCompletedDays(progress.filter(p => p.status === "completed").length);
-
       if (user) {
         const [statistics, submissions] = await Promise.all([
           getSubmissionStatistics(user),
@@ -95,18 +89,15 @@ function App() {
       setLoaded(true);
     }
   }
-
   useEffect(() => {
     void loadData();
   }, []);
-
   useEffect(() => {
     const palette = themes[theme];
     document.documentElement.style.setProperty("--accent", palette.accent);
     document.documentElement.style.setProperty("--accent-soft", palette.soft);
     document.documentElement.style.setProperty("--accent-on", palette.on);
   }, [theme]);
-
   async function detect() {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -128,7 +119,6 @@ function App() {
       setStatus(error.message || "Could not detect your account.");
     }
   }
-
   async function sync() {
     setBusy(true);
     setStatus("Checking your LeetCode session...");
@@ -142,11 +132,9 @@ function App() {
         type: "MLSC_GET_PROFILE"
       });
       if (!profile?.username) throw new Error("Could not detect your LeetCode username.");
-
       const user = profile.username;
       setUsername(user);
       await chrome.storage.local.set({ username: user });
-
       const stored = await chrome.storage.local.get("syncCheckpoints");
       const checkpoints = stored.syncCheckpoints || {};
       const result: any = await chrome.tabs.sendMessage(active.id, {
@@ -155,7 +143,6 @@ function App() {
         stopAtSubmissionId: checkpoints[user] || null
       });
       if (!result?.ok) throw new Error(result?.error || "Could not read LeetCode data.");
-
       const saved = await importLeetCodeSubmissions(user, result.submissions || []);
       if (result.submissions?.length) {
         checkpoints[user] = result.submissions[0].submission_id;
@@ -169,10 +156,9 @@ function App() {
       setBusy(false);
     }
   }
-
   async function updateChallengeDay(
-    dayNumber: number,
-    updates: Partial<{ status: "unlocked" | "attempted" | "completed"; problemSlug: string; notes: string }>
+dayNumber: number,
+updates: Partial<{ status: "unlocked" | "attempted" | "completed"; problemSlug: string; notes: string }>
   ) {
     const current = dayProgress[dayNumber] || {
       status: "unlocked" as const,
@@ -181,7 +167,6 @@ function App() {
     };
     const next = { ...current, ...updates };
     const completedAtMs = next.status === "completed" ? Date.now() : undefined;
-
     await db.progress.put({
       dayNumber,
       status: next.status,
@@ -191,61 +176,48 @@ function App() {
       notes: next.notes,
       updatedAtMs: Date.now()
     });
-
     setDayProgress(previous => ({ ...previous, [dayNumber]: next }));
     setCompletedDays(Object.values({ ...dayProgress, [dayNumber]: next })
       .filter(item => item.status === "completed").length);
   }
-
   async function syncAllHistory() {
     if (busy) return;
     setBusy(true);
-
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const active = tabs[0];
       if (!active?.id || !active.url?.startsWith("https://leetcode.com/")) {
         throw new Error("Open LeetCode in the active tab first.");
       }
-
       const profile: any = await chrome.tabs.sendMessage(active.id, {
         type: "MLSC_GET_PROFILE"
       });
       if (!profile?.username) throw new Error("Could not detect your LeetCode username.");
-
       const user = profile.username;
       setUsername(user);
       await chrome.storage.local.set({ username: user });
-
       const savedState = await chrome.storage.local.get("fullHistorySync");
       const previous = savedState.fullHistorySync;
       let nextPage = previous?.username === user ? Number(previous.nextPage || 0) : 0;
       let totalSaved = 0;
       let totalFetched = 0;
-
       setStatus(nextPage ? `Resuming full history from page ${nextPage + 1}...` : "Starting full history sync...");
-
       while (true) {
         const result: any = await chrome.tabs.sendMessage(active.id, {
           type: "MLSC_SYNC",
           startPage: nextPage,
           maxPages: 5
         });
-
         if (!result?.ok) throw new Error(result?.error || "Full history sync failed.");
-
         const batch = result.submissions || [];
         const saved = await importLeetCodeSubmissions(user, batch);
         totalSaved += saved.inserted;
         totalFetched += batch.length;
         nextPage = Number(result.nextPage ?? nextPage + 5);
-
         await chrome.storage.local.set({
           fullHistorySync: { username: user, nextPage, updatedAtMs: Date.now() }
         });
-
         setStatus(`Full sync · ${totalFetched} fetched · ${totalSaved} new saved · page ${nextPage}`);
-
         if (!result.hasMore || result.pagesFetched === 0) {
           await chrome.storage.local.remove("fullHistorySync");
           setStatus(`Full history sync complete · ${totalSaved} new submissions saved`);
@@ -259,20 +231,16 @@ function App() {
       setBusy(false);
     }
   }
-
   async function toggleAutoSync() {
     const next = !autoSync;
     setAutoSync(next);
     await chrome.storage.local.set({ autoSyncEnabled: next });
   }
-
   async function chooseTheme(next: Theme) {
     setTheme(next);
     await chrome.storage.local.set({ mlscTheme: next });
   }
-
   const accepted = (value: string) => value.toLowerCase() === "accepted";
-
   const languages = [...new Set(recent.map(item => item.language || "Unknown"))].sort();
   const statuses = [...new Set(recent.map(item => item.status))].sort();
   const filteredRecords = recent.filter(item => {
@@ -282,13 +250,34 @@ function App() {
     return matchesSearch && matchesStatus && matchesLanguage;
   });
 
+  // Search the complete locally synced submission history by LeetCode URL or slug.
+  const lookupInput = problemLookup.trim();
+  const lookupSlug = (
+    lookupInput.match(/leetcode\.com\/problems\/([^/?#]+)/i)?.[1]
+    || lookupInput.replace(/^\/+|\/+$/g, "")
+  ).toLowerCase();
+  const lookupMatches = lookupSlug
+    ? recent.filter(item => item.problemSlug.trim().toLowerCase() === lookupSlug)
+    : [];
+  const lookupAccepted = lookupMatches.some(item => accepted(item.status));
+  const lookupStatus = !lookupInput
+    ? null
+    : !lookupSlug
+      ? "invalid"
+      : !loaded
+        ? "loading"
+        : lookupMatches.length === 0
+          ? "not-found"
+          : lookupAccepted
+            ? "solved"
+            : "attempted";
+  const lookupTitle = lookupMatches[0]?.problemTitle || lookupSlug;
   const activityByDate = new Map<string, number>();
   for (const item of recent) {
     const date = new Date(item.timestampMs);
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     activityByDate.set(key, (activityByDate.get(key) || 0) + 1);
   }
-
   const today = new Date();
   const heatmapDays = Array.from({ length: 28 }, (_, index) => {
     const date = new Date(today);
@@ -296,7 +285,6 @@ function App() {
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     return { key, date, count: activityByDate.get(key) || 0 };
   });
-
   const weeklyDays = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(today);
     date.setDate(today.getDate() - 6 + index);
@@ -316,23 +304,19 @@ function App() {
   ).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const acceptedCount = recent.filter(item => accepted(item.status)).length;
   const otherCount = recent.length - acceptedCount;
-
   const acceptedRecords = recent.filter(item => accepted(item.status));
   const solvedProblems = new Set(acceptedRecords.map(item => item.problemSlug));
   const solvedByDate = new Map<string, Set<string>>();
-
   for (const item of acceptedRecords) {
     const date = new Date(item.timestampMs);
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     if (!solvedByDate.has(key)) solvedByDate.set(key, new Set());
     solvedByDate.get(key)!.add(item.problemSlug);
   }
-
   const solvedDates = [...solvedByDate.keys()].sort();
   let longestStreak = 0;
   let runningStreak = 0;
   let previousDate: Date | null = null;
-
   for (const key of solvedDates) {
     const [year, month, day] = key.split("-").map(Number);
     const date = new Date(year, month - 1, day);
@@ -342,12 +326,10 @@ function App() {
     longestStreak = Math.max(longestStreak, runningStreak);
     previousDate = date;
   }
-
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
-
   let currentStreak = 0;
   if (solvedByDate.has(todayKey) || solvedByDate.has(yesterdayKey)) {
     currentStreak = 1;
@@ -359,10 +341,7 @@ function App() {
       currentStreak++;
     }
   }
-
   const todaySolved = solvedByDate.get(todayKey)?.size || 0;
-
-
   return (
     <div className="app">
       <header className="hdr">
@@ -380,7 +359,6 @@ function App() {
           <span className="version">v0.1.0</span>
         </div>
       </header>
-
       <nav className="tabs">
         {(["control", "records", "days"] as Tab[]).map(item => (
           <button
@@ -392,7 +370,6 @@ function App() {
           </button>
         ))}
       </nav>
-
       <main className="main">
         {tab === "control" && (
           <section className="panel">
@@ -400,7 +377,6 @@ function App() {
               <div><div className="eyebrow">PREFERENCES</div><h1>Control Center</h1></div>
               <small>Changes apply immediately.</small>
             </div>
-
             <section className="card">
               <div className="card-heading"><span>LeetCode account</span><small>connection</small></div>
               <div className="account-row">
@@ -418,7 +394,6 @@ function App() {
                 </div>
               </div>
             </section>
-
             <section className="card">
               <div className="card-heading"><span>Data & sync</span><small>local-first</small></div>
               <div className="account-row">
@@ -466,7 +441,6 @@ function App() {
               </div>
               <div className="status-line"><span className="status-dot" />{status}</div>
             </section>
-
             <section className="card">
               <div className="card-heading"><span>Appearance</span><small>personalize</small></div>
               <div className="theme-label">
@@ -494,7 +468,6 @@ function App() {
                 ))}
               </div>
             </section>
-
             <details className="card disclosure">
               <summary>
                 <span><b>Privacy & storage</b><small>How your data is handled</small></span>
@@ -504,15 +477,83 @@ function App() {
             </details>
           </section>
         )}
-
         {tab === "records" && (
           <section className="panel">
             <div className="panel-intro">
               <div><div className="eyebrow">FROM YOUR SOLVE HISTORY</div><h1>Records</h1></div>
               <small>Use your recent attempts to decide what to practise next.</small>
             </div>
+            <section className="card" style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <div className="card-heading">
+              <span>Problem status checker</span>
+              <Code2 size={15} />
+            </div>
+            <p style={{ color: "var(--dim)", fontSize: 11, lineHeight: 1.5, margin: 0 }}>
+              Check whether a problem has been solved or attempted in your synced history.
+            </p>
+            <input
+              className="record-search"
+              type="search"
+              placeholder="Paste LeetCode URL or problem slug..."
+              value={problemLookup}
+              onChange={event => setProblemLookup(event.target.value)}
+            />
+            {!lookupInput ? (
+              <p style={{ color: "var(--dim)", fontSize: 10, margin: 0 }}>
+                Example: two-sum or leetcode.com/problems/two-sum/
+              </p>
+            ) : lookupStatus === "invalid" ? (
+              <p style={{ color: "var(--dim)", fontSize: 11, margin: 0 }}>
+                Enter a valid LeetCode problem URL or slug.
+              </p>
+            ) : lookupStatus === "loading" ? (
+              <p style={{ color: "var(--dim)", fontSize: 11, margin: 0 }}>
+                Loading submission history...
+              </p>
+            ) : lookupStatus === "not-found" ? (
+              <div style={{ display: "flex", gap: 10, padding: 12, border: "1px solid var(--border)", borderRadius: 9 }}>
+                <Code2 size={18} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <b style={{ fontSize: 12 }}>Not found in synced history</b>
+                  <small style={{ color: "var(--dim)", fontSize: 10, lineHeight: 1.5 }}>
+                    No submission for this problem exists in your locally stored records. This does not necessarily mean you have never attempted it.
+                  </small>
+                </div>
+              </div>
+            ) : lookupStatus === "solved" ? (
+              <div style={{ display: "flex", gap: 10, padding: 12, border: "1px solid rgba(163,230,53,.3)", borderRadius: 9, color: "var(--ok)" }}>
+                <CheckCircle2 size={18} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <b style={{ fontSize: 12 }}>Solved · Accepted</b>
+                  <small style={{ color: "var(--dim)", fontSize: 10 }}>
+                    {lookupTitle} · {lookupMatches.length} recorded attempt{lookupMatches.length === 1 ? "" : "s"}
+                  </small>
+                </div>
+              </div>
+            ) : lookupStatus === "attempted" ? (
+              <div style={{ display: "flex", gap: 10, padding: 12, border: "1px solid rgba(251,191,101,.3)", borderRadius: 9, color: "#fbbf65" }}>
+                <Activity size={18} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <b style={{ fontSize: 12 }}>Attempted · Not solved</b>
+                  <small style={{ color: "var(--dim)", fontSize: 10 }}>
+                    {lookupTitle} · {lookupMatches.length} recorded attempt{lookupMatches.length === 1 ? "" : "s"}
+                  </small>
+                </div>
+              </div>
+            ) : null}
+            {lookupMatches.length > 0 && (
+              <a
+                className="day-problem-link"
+                href={`https://leetcode.com/problems/${encodeURIComponent(lookupSlug)}/`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open problem on LeetCode <ChevronRight size={13} />
+              </a>
+            )}
+          </section>
 
-            <section className="card highlight-card">
+          <section className="card highlight-card">
               <div className="card-heading"><span>Your activity</span><Activity size={15} /></div>
               <div className="metrics">
                 <div><strong>{loaded ? solvedProblems.size : "—"}</strong><small>Solved</small></div>
@@ -520,7 +561,6 @@ function App() {
                 <div><strong>{loaded ? `${stats.acceptanceRate}%` : "—"}</strong><small>Acceptance</small></div>
               </div>
             </section>
-
             <section className="card">
               <div className="card-heading"><span>Solving consistency</span><small>accepted submissions only</small></div>
               <div className="streak-grid">
@@ -533,7 +573,6 @@ function App() {
                 <span>{solvedByDate.size} active solve days</span>
               </div>
             </section>
-
             <section className="card activity-card">
               <div className="card-heading"><span>Activity · last 28 days</span><small>{heatmapDays.reduce((sum, day) => sum + (day.count > 0 ? 1 : 0), 0)} active days</small></div>
               <div className="heatmap-months"><span>{heatmapDays[0].date.toLocaleDateString("en", { month: "short" })}</span><span>{today.toLocaleDateString("en", { month: "short" })}</span></div>
@@ -548,7 +587,6 @@ function App() {
               </div>
               <div className="heatmap-legend"><span>Less</span>{[0, 1, 2, 3, 4].map(level => <i key={level} className={`heat-cell level-${level}`} />)}<span>More</span></div>
             </section>
-
             <section className="card">
               <div className="card-heading"><span>Last 7 days</span><small>submissions per day</small></div>
               <div className="weekly-chart">
@@ -561,7 +599,6 @@ function App() {
                 ))}
               </div>
             </section>
-
             <section className="card">
               <div className="card-heading"><span>Submission breakdown</span><small>{recent.length} total attempts</small></div>
               <div className="verdict-summary">
@@ -580,7 +617,6 @@ function App() {
                 </div>
               )) : <p className="analytics-empty">No language data yet. Sync your submissions first.</p>}
             </section>
-
             <section className="card">
               <div className="card-heading"><span>Submission history</span><small>{filteredRecords.length} / {recent.length}</small></div>
               <input
@@ -637,14 +673,12 @@ function App() {
             <p className="note">Showing your locally stored LeetCode submissions. Select any row to open its problem on LeetCode.</p>
           </section>
         )}
-
         {tab === "days" && (
           <section className="panel">
             <div className="panel-intro">
               <div><div className="eyebrow">THE 100-DAY CHALLENGE</div><h1>Your journey</h1></div>
               <small>One day at a time.</small>
             </div>
-
             <section className="card journey-card">
               <div className="journey-top">
                 <div>
@@ -659,7 +693,6 @@ function App() {
                 <span>{Math.round(completedDays)}% completed</span>
               </div>
             </section>
-
             <div className="challenge-stats">
               <div className="mini-stat">
                 <span className="mini-stat-icon"><CheckCircle2 size={14} /></span>
@@ -677,7 +710,6 @@ function App() {
                 <small>LeetCode solved</small>
               </div>
             </div>
-
             <section className="card roadmap-card">
               <div className="card-heading">
                 <span>100-day roadmap</span>
@@ -706,7 +738,6 @@ function App() {
               </div>
               <div className="roadmap-foot">Select any day to view or update its details.</div>
             </section>
-
             <section className="card selected-day-card">
               <div className="selected-day-heading">
                 <div>
@@ -751,9 +782,7 @@ function App() {
             <p className="note">Progress is saved locally. Day completion is self-reported until official challenge verification is integrated.</p>
           </section>
         )}
-
       </main>
-
       <footer className="footer">
         <a href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a>
         <span>Local-first · MLSC 100 Days</span>
@@ -761,5 +790,4 @@ function App() {
     </div>
   );
 }
-
 createRoot(document.getElementById("root")!).render(<App />);
